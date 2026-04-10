@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>My World Atlas</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;900&family=Exo+2:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
+<style>
+:root{
+  --bg:#0c0c0c;
+  --panel:rgba(17,16,15,0.97);
+  --border:rgba(255,255,255,0.08);
+  --border-hi:rgba(255,255,255,0.15);
+  --accent:#c8a96e;
+  --accent-dim:rgba(200,169,110,0.14);
+  --text:#cec6bc;
+  --text-dim:#8a8278;
+  --muted:#4e4840;
+  --glow:0 0 20px rgba(200,169,110,0.18);
+  --c-bp:#ef4444;--c-li:#f59e0b;--c-vi:#22c55e;--c-wi:#a855f7;
+  --sw:286px;
+  --safe-b:env(safe-area-inset-bottom,0px);
+  --safe-t:env(safe-area-inset-top,0px);
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:'Exo 2',sans-serif;font-size:14px;touch-action:none}
+canvas{position:fixed;inset:0;display:block;touch-action:none}
+.glass{background:var(--panel);border:1px solid var(--border);border-radius:14px;backdrop-filter:blur(28px);-webkit-backdrop-filter:blur(28px)}
+
+/* ═══ HEADER ═══ */
+#hdr{position:fixed;top:0;left:0;right:0;z-index:20;background:linear-gradient(to bottom,rgba(12,12,12,.97) 70%,transparent);pointer-events:none;padding-top:var(--safe-t)}
+#hdr-inner{display:flex;align-items:center;justify-content:space-between;padding:0 16px;height:52px}
+#hdr *{pointer-events:auto}
+.logo{font-family:'Orbitron',monospace;font-size:.85rem;font-weight:900;letter-spacing:.18em;color:var(--accent);text-shadow:var(--glow);text-transform:uppercase;white-space:nowrap}
+.logo em{color:var(--text-dim);font-style:normal;font-weight:300}
+.stats{display:flex;gap:16px}
+.sn{font-family:'Orbitron',monospace;font-size:1.1rem;font-weight:700;color:var(--accent);line-height:1;text-align:center}
+.sl{font-size:.52rem;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-top:2px;text-align:center}
+
+/* ═══ FAB ROW (mobile bottom) ═══ */
+#fabs{position:fixed;bottom:0;right:0;z-index:20;display:flex;flex-direction:column;align-items:flex-end;gap:10px;padding:12px 14px;padding-bottom:calc(12px + var(--safe-b))}
+.fab{width:46px;height:46px;border-radius:50%;border:1px solid var(--border-hi);background:var(--panel);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1.1rem;color:var(--accent);transition:background .15s,transform .12s;box-shadow:0 4px 16px rgba(0,0,0,.5);-webkit-user-select:none;user-select:none}
+.fab:active{transform:scale(.92);background:rgba(200,169,110,.12)}
+#fab-panel{font-size:1rem}
+
+/* ═══ SIDEBAR — DESKTOP ═══ */
+#side{position:fixed;right:16px;top:calc(var(--safe-t) + 60px);bottom:16px;width:var(--sw);display:flex;flex-direction:column;gap:9px;z-index:10;transition:transform .3s cubic-bezier(.4,0,.2,1),opacity .3s ease}
+#side.open{transform:translateX(0);opacity:1;pointer-events:auto}
+#side.shut{transform:translateX(calc(var(--sw) + 28px));opacity:0;pointer-events:none}
+/* Desktop sidebar tab */
+#stab{position:fixed;top:50%;z-index:11;width:20px;height:48px;background:var(--panel);border:1px solid var(--border);border-right:none;border-radius:8px 0 0 8px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:.7rem;color:var(--text-dim);transition:right .3s cubic-bezier(.4,0,.2,1),background .12s,color .12s;transform:translateY(-50%)}
+#stab.open{right:var(--sw);margin-right:16px}
+#stab.shut{right:0}
+#stab:hover{background:rgba(22,20,18,.99);color:var(--accent)}
+
+/* ═══ BOTTOM SHEET (mobile sidebar) ═══ */
+#sheet{position:fixed;left:0;right:0;bottom:0;z-index:30;border-radius:18px 18px 0 0;border-bottom:none;display:flex;flex-direction:column;max-height:80vh;transform:translateY(100%);transition:transform .32s cubic-bezier(.4,0,.2,1);padding-bottom:var(--safe-b);display:none}
+#sheet.peek{transform:translateY(calc(100% - 72px))}
+#sheet.open{transform:translateY(0)}
+.sh-handle{width:36px;height:4px;border-radius:2px;background:var(--border-hi);margin:10px auto 14px;flex-shrink:0;cursor:grab}
+.sh-handle:active{cursor:grabbing}
+.sh-tabs{display:flex;gap:6px;padding:0 14px 12px;flex-shrink:0}
+.sh-tab{flex:1;padding:8px 6px;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--text-dim);font-family:'Exo 2',sans-serif;font-size:.78rem;font-weight:500;cursor:pointer;text-align:center;transition:all .13s}
+.sh-tab.on{background:var(--accent-dim);border-color:var(--accent);color:var(--accent)}
+.sh-body{flex:1;overflow-y:auto;padding:0 14px 8px;-webkit-overflow-scrolling:touch}
+.sh-body::-webkit-scrollbar{display:none}
+
+/* ═══ LEGEND ═══ */
+#leg{padding:13px 15px}
+.leg-t{font-family:'Orbitron',monospace;font-size:.54rem;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+.leg-row{display:flex;align-items:center;gap:9px;padding:5px 4px;border-radius:7px}
+.leg-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.leg-name{flex:1;font-size:.8rem;font-weight:500}
+.leg-cnt{font-family:'Orbitron',monospace;font-size:.62rem;color:var(--muted)}
+
+/* ═══ COUNTRIES LIST ═══ */
+#clist{flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.ph{display:flex;align-items:center;justify-content:space-between;padding:11px 13px 7px;border-bottom:1px solid var(--border);flex-shrink:0}
+.pt{font-family:'Orbitron',monospace;font-size:.54rem;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+.ib{min-width:40px;height:40px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--accent);font-size:1.1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .13s;line-height:1;flex-shrink:0;padding:0 8px}
+.ib:hover,.ib:active{background:var(--accent-dim);border-color:var(--accent)}
+.ib-sm{min-width:32px;height:32px;font-size:.95rem;border-radius:7px}
+.cscroll{overflow-y:auto;flex:1;padding:5px;-webkit-overflow-scrolling:touch}
+.cscroll::-webkit-scrollbar{width:3px}
+.cscroll::-webkit-scrollbar-thumb{background:rgba(200,169,110,.18);border-radius:2px}
+.ci{display:flex;align-items:center;gap:9px;padding:10px 9px;border-radius:9px;cursor:pointer;transition:background .12s;margin-bottom:2px}
+.ci:hover,.ci:active{background:rgba(255,255,255,.05)}
+.cdot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.cn{flex:1;font-size:.82rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cm{font-size:.68rem;color:var(--muted);white-space:nowrap}
+/* Delete always visible on touch devices */
+.cdel{width:32px;height:32px;border:none;background:transparent;color:var(--muted);font-size:1.1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;border-radius:6px;flex-shrink:0;transition:color .12s,background .12s}
+.cdel:active{color:#ef4444;background:rgba(239,68,68,.1)}
+.empty{padding:22px 14px;text-align:center;color:var(--muted);font-size:.78rem;line-height:1.9}
+
+/* ═══ BOTTOM HINT (desktop only) ═══ */
+#hint{position:fixed;bottom:16px;left:16px;z-index:10;padding:8px 12px}
+.ht{font-size:.7rem;color:var(--muted)}
+kbd{display:inline-block;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:4px;padding:1px 5px;font-size:.65rem;font-family:monospace;color:var(--text-dim)}
+
+/* ═══ TOOLTIP (desktop only) ═══ */
+#tip{position:fixed;pointer-events:none;z-index:50;background:rgba(10,9,8,.97);border:1px solid var(--border-hi);border-radius:9px;padding:8px 12px;font-size:.77rem;opacity:0;transition:opacity .12s;max-width:210px}
+#tip.show{opacity:1}
+#tip b{display:block;font-size:.87rem;margin-bottom:2px;color:var(--text)}
+#tip span{color:var(--text-dim)}
+
+/* ═══ TAP BANNER (mobile country name on tap) ═══ */
+#tapbanner{position:fixed;top:calc(var(--safe-t) + 58px);left:50%;transform:translateX(-50%) translateY(-10px);z-index:25;padding:8px 18px;border-radius:20px;font-size:.85rem;font-weight:600;color:var(--text);opacity:0;transition:all .2s;pointer-events:none;white-space:nowrap;max-width:90vw;overflow:hidden;text-overflow:ellipsis}
+#tapbanner.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ═══ MODAL ═══ */
+#mover{position:fixed;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);z-index:100;display:flex;align-items:flex-end;justify-content:center;opacity:0;pointer-events:none;transition:opacity .22s}
+#mover.on{opacity:1;pointer-events:auto}
+#modal{width:100%;max-width:520px;border-radius:18px 18px 0 0;border-bottom:none;padding:20px 20px calc(20px + var(--safe-b));animation:bsup .22s ease;max-height:92vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
+@keyframes bsup{from{transform:translateY(30px);opacity:0}to{transform:none;opacity:1}}
+.modal-handle{width:36px;height:4px;border-radius:2px;background:var(--border-hi);margin:0 auto 16px}
+.mt{font-family:'Orbitron',monospace;font-size:.95rem;font-weight:700;margin-bottom:2px;color:var(--text)}
+.ms{font-size:.76rem;color:var(--muted);margin-bottom:0}
+.fl{display:block;font-size:.61rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:8px;margin-top:16px}
+.cgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.cb{padding:12px 10px;border-radius:10px;border:1.5px solid var(--border);background:transparent;color:var(--text-dim);font-family:'Exo 2',sans-serif;font-size:.85rem;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:all .13s;min-height:48px}
+.cb:active{opacity:.8}
+.cb.on{border-color:var(--cc);background:rgba(var(--cr),.13);color:var(--cc)}
+.dur{display:none}
+.dur.on{display:block}
+.drow{display:flex;gap:8px;align-items:center}
+/* 16px prevents iOS auto-zoom on input focus */
+input[type=number],input[type=text]{background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:'Exo 2',sans-serif;font-size:16px;padding:12px 13px;outline:none;transition:border-color .15s;width:100%;-webkit-appearance:none;appearance:none}
+input[type=number]:focus,input[type=text]:focus{border-color:var(--accent)}
+input[type=number]{flex:1;width:auto}
+.unit{color:var(--muted);font-size:.8rem;white-space:nowrap}
+.name-wrap{position:relative}
+.name-wrap input{padding-right:66px}
+.name-rst{position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:.62rem;color:var(--muted);cursor:pointer;background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:5px;padding:4px 8px;transition:color .12s;white-space:nowrap;user-select:none;-webkit-user-select:none}
+.name-rst:active{color:var(--accent)}
+.mact{display:flex;gap:8px;margin-top:20px}
+.bpri{flex:1;padding:14px;border-radius:10px;border:none;background:var(--accent);color:#110e08;font-family:'Orbitron',monospace;font-size:.7rem;font-weight:700;letter-spacing:.08em;cursor:pointer;transition:opacity .14s;min-height:48px}
+.bpri:active{opacity:.8}
+.bsec{padding:14px 18px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text-dim);font-family:'Exo 2',sans-serif;font-size:.85rem;cursor:pointer;transition:background .12s;min-height:48px}
+.bsec:active{background:rgba(255,255,255,.07)}
+
+/* ═══ SEARCH ═══ */
+#sover{position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);z-index:100;display:flex;align-items:flex-start;justify-content:center;padding-top:calc(var(--safe-t) + 16px);padding-left:12px;padding-right:12px;opacity:0;pointer-events:none;transition:opacity .18s}
+#sover.on{opacity:1;pointer-events:auto}
+#sbox{width:100%;max-width:500px;padding:14px 16px}
+.sinp{display:flex;align-items:center;gap:10px;padding-bottom:10px;border-bottom:1px solid var(--border)}
+.sico{color:var(--accent);font-size:1rem;flex-shrink:0}
+#sinput{flex:1;background:transparent;border:none;outline:none;color:var(--text);font-family:'Exo 2',sans-serif;font-size:16px;min-height:40px}
+#sinput::placeholder{color:var(--muted)}
+.s-close{width:36px;height:36px;border:none;background:rgba(255,255,255,.06);border-radius:8px;color:var(--text-dim);font-size:1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+#sres{max-height:55vh;overflow-y:auto;margin-top:6px;-webkit-overflow-scrolling:touch}
+.sr{display:flex;align-items:center;gap:10px;padding:12px 10px;border-radius:9px;cursor:pointer;transition:background .1s;font-size:.88rem;color:var(--text);min-height:48px}
+.sr:active{background:rgba(200,169,110,.1)}
+.sr-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--border)}
+.sr-sub{font-size:.68rem;color:var(--muted);font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90px}
+.sr-cat{margin-left:auto;font-size:.72rem;color:var(--muted);flex-shrink:0}
+
+/* ═══ SETTINGS ═══ */
+#cfg{position:fixed;top:0;right:0;bottom:0;width:305px;z-index:120;border-radius:0;border-right:none;border-left:1px solid var(--border);padding:22px;overflow-y:auto;transform:translateX(100%);transition:transform .28s ease;-webkit-overflow-scrolling:touch;padding-bottom:calc(22px + var(--safe-b))}
+#cfg.on{transform:translateX(0)}
+.cfg-t{font-family:'Orbitron',monospace;font-size:.8rem;font-weight:700;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;color:var(--text)}
+.cfg-sec{font-size:.57rem;text-transform:uppercase;letter-spacing:.14em;color:var(--muted);margin-bottom:9px;margin-top:18px}
+.cr{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);min-height:48px}
+.cl{display:flex;align-items:center;gap:8px;font-size:.82rem;color:var(--text)}
+.cprev{width:16px;height:16px;border-radius:50%;flex-shrink:0}
+input[type=color]{width:40px;height:34px;border:1px solid var(--border);border-radius:6px;background:transparent;cursor:pointer;padding:3px}
+.tog{display:flex;align-items:center;gap:10px;font-size:.82rem;cursor:pointer;padding:10px 0;color:var(--text);min-height:48px}
+input[type=checkbox]{accent-color:var(--accent);width:16px;height:16px;cursor:pointer;flex-shrink:0}
+.bdanger{width:100%;padding:13px;border-radius:10px;border:1px solid rgba(239,68,68,.22);background:transparent;color:#c45;font-family:'Exo 2',sans-serif;font-size:.85rem;cursor:pointer;margin-top:20px;transition:background .12s;min-height:48px}
+.bdanger:active{background:rgba(239,68,68,.07)}
+
+/* ═══ LOADING ═══ */
+#load{position:fixed;inset:0;background:var(--bg);z-index:200;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;transition:opacity .5s}
+#load.fade{opacity:0;pointer-events:none}
+.llogo{font-family:'Orbitron',monospace;font-size:2rem;font-weight:900;color:var(--accent);text-shadow:0 0 36px rgba(200,169,110,.35);letter-spacing:.22em}
+.lbar{width:150px;height:1px;background:rgba(200,169,110,.14);overflow:hidden}
+.lfill{height:100%;background:var(--accent);width:0;animation:lf 1.6s ease forwards}
+@keyframes lf{to{width:100%}}
+.ltxt{color:var(--muted);font-size:.7rem;letter-spacing:.1em}
+
+/* ═══ TOAST ═══ */
+#toast{position:fixed;bottom:calc(80px + var(--safe-b));left:50%;transform:translateX(-50%) translateY(10px);background:rgba(200,169,110,.09);border:1px solid rgba(200,169,110,.28);border-radius:10px;padding:9px 18px;font-size:.82rem;color:var(--accent);opacity:0;transition:all .22s;z-index:300;white-space:nowrap;pointer-events:none}
+#toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ═══ MOBILE BREAKPOINT ═══ */
+@media(max-width:640px){
+  /* Hide desktop elements */
+  #side,#stab,#hint{display:none!important}
+  /* Show mobile elements */
+  #sheet{display:flex}
+  .cdel{opacity:1!important}/* always show delete on mobile */
+  /* Smaller header stats gap */
+  .stats{gap:12px}
+  .sn{font-size:1rem}
+  .logo em{display:none}
+  /* Settings full-width */
+  #cfg{width:100%;border-left:none;border-radius:18px 18px 0 0;top:auto;border-top:1px solid var(--border);padding-top:16px;transform:translateY(100%)}
+  #cfg.on{transform:translateY(0)}
+  /* FABs smaller on phone */
+  .fab{width:44px;height:44px}
+  #tip{display:none}
+}
+
+/* ═══ DESKTOP BREAKPOINT ═══ */
+@media(min-width:641px){
+  #sheet,#fabs,#tapbanner{display:none!important}
+  /* Show desktop elements */
+  #hint{display:block}
+  /* Desktop delete hover */
+  .cdel{opacity:0}
+  .ci:hover .cdel{opacity:1}
+  .cdel:hover{color:#ef4444!important;background:rgba(239,68,68,.1)}
+  /* Desktop modal centred */
+  #mover{align-items:center}
+  #modal{border-radius:14px;padding:24px;max-width:420px;animation:deskup .2s ease}
+  @keyframes deskup{from{transform:translateY(14px);opacity:0}to{transform:none;opacity:1}}
+  .modal-handle{display:none}
+}
+</style>
+</head>
+<body>
+
+<div id="load">
+  <div class="llogo">ATLAS</div>
+  <div class="lbar"><div class="lfill"></div></div>
+  <div class="ltxt">Loading world data…</div>
+</div>
+
+<canvas id="gc"></canvas>
+
+<!-- HEADER -->
+<header id="hdr">
+  <div id="hdr-inner">
+    <div class="logo">My World <em>&nbsp;/ Atlas</em></div>
+    <div class="stats">
+      <div><div class="sn" id="s-vi">0</div><div class="sl">Visited</div></div>
+      <div><div class="sn" id="s-li">0</div><div class="sl">Lived</div></div>
+      <div><div class="sn" id="s-to">0</div><div class="sl">Total</div></div>
+      <div><div class="sn" id="s-pc">0%</div><div class="sl">World</div></div>
+    </div>
+  </div>
+</header>
+
+<!-- Desktop tooltip -->
+<div id="tip"><b id="tip-name"></b><span id="tip-sub"></span></div>
+
+<!-- Mobile tap banner -->
+<div class="glass" id="tapbanner"></div>
+
+<!-- Desktop sidebar tab -->
+<div id="stab" class="open" title="Toggle panel">‹</div>
+
+<!-- Desktop sidebar -->
+<div id="side" class="open">
+  <div class="glass" id="leg">
+    <div class="leg-t">Categories</div>
+    <div class="leg-row"><div class="leg-dot" id="d-bp"></div><div class="leg-name">Birthplace</div><div class="leg-cnt" id="c-bp">0</div></div>
+    <div class="leg-row"><div class="leg-dot" id="d-li"></div><div class="leg-name">Lived In</div><div class="leg-cnt" id="c-li">0</div></div>
+    <div class="leg-row"><div class="leg-dot" id="d-vi"></div><div class="leg-name">Visited</div><div class="leg-cnt" id="c-vi">0</div></div>
+    <div class="leg-row"><div class="leg-dot" id="d-wi"></div><div class="leg-name">Wishlist</div><div class="leg-cnt" id="c-wi">0</div></div>
+  </div>
+  <div class="glass" id="clist">
+    <div class="ph">
+      <span class="pt">My Countries</span>
+      <button class="ib ib-sm" id="btn-add" title="Search & add">+</button>
+    </div>
+    <div class="cscroll" id="cscroll">
+      <div class="empty" id="cempty">Click a country on the globe<br>or press <kbd>+</kbd> to search</div>
+    </div>
+  </div>
+</div>
+
+<!-- Desktop hint -->
+<div class="glass" id="hint">
+  <div class="ht"><kbd>Drag</kbd> rotate &nbsp;·&nbsp; <kbd>Scroll</kbd> zoom &nbsp;·&nbsp; <kbd>Click</kbd> add</div>
+</div>
+
+<!-- Mobile FABs -->
+<div id="fabs">
+  <div class="fab" id="fab-cfg" title="Settings">⚙</div>
+  <div class="fab" id="fab-add" title="Add country">+</div>
+  <div class="fab" id="fab-panel" title="My countries">≡</div>
+</div>
+
+<!-- Desktop settings button -->
+<button class="ib glass" id="btn-cfg" style="position:fixed;bottom:16px;right:16px;z-index:12;width:38px;height:38px;font-size:.9rem" title="Settings">⚙</button>
+
+<!-- MOBILE BOTTOM SHEET -->
+<div class="glass" id="sheet">
+  <div class="sh-handle" id="sh-handle"></div>
+  <div class="sh-tabs">
+    <button class="sh-tab on" data-tab="legend">Categories</button>
+    <button class="sh-tab" data-tab="list">My Countries</button>
+  </div>
+  <div class="sh-body" id="sh-body">
+    <!-- legend tab -->
+    <div id="sh-legend">
+      <div class="leg-row"><div class="leg-dot" id="m-d-bp"></div><div class="leg-name">Birthplace</div><div class="leg-cnt" id="m-c-bp">0</div></div>
+      <div class="leg-row"><div class="leg-dot" id="m-d-li"></div><div class="leg-name">Lived In</div><div class="leg-cnt" id="m-c-li">0</div></div>
+      <div class="leg-row"><div class="leg-dot" id="m-d-vi"></div><div class="leg-name">Visited</div><div class="leg-cnt" id="m-c-vi">0</div></div>
+      <div class="leg-row"><div class="leg-dot" id="m-d-wi"></div><div class="leg-name">Wishlist</div><div class="leg-cnt" id="m-c-wi">0</div></div>
+    </div>
+    <!-- list tab -->
+    <div id="sh-list" style="display:none">
+      <div class="empty" id="m-cempty" style="padding:16px 0">Tap a country on the globe<br>or tap <b style="color:var(--accent)">+</b> to search</div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div id="mover">
+  <div class="glass" id="modal">
+    <div class="modal-handle"></div>
+    <div class="mt" id="m-name">Country</div>
+    <div class="ms" id="m-sub">Mark how you know this place</div>
+
+    <label class="fl">Display Name</label>
+    <div class="name-wrap">
+      <input type="text" id="m-dispname" placeholder="Custom label…" autocomplete="off">
+      <span class="name-rst" id="btn-nrst">Reset</span>
+    </div>
+
+    <label class="fl">Category</label>
+    <div class="cgrid">
+      <button class="cb" data-cat="birthplace" style="--cc:var(--c-bp);--cr:239,68,68"><span>🏠</span>Birthplace</button>
+      <button class="cb" data-cat="lived"      style="--cc:var(--c-li);--cr:245,158,11"><span>🏡</span>Lived In</button>
+      <button class="cb" data-cat="visited"    style="--cc:var(--c-vi);--cr:34,197,94" ><span>✈️</span>Visited</button>
+      <button class="cb" data-cat="wishlist"   style="--cc:var(--c-wi);--cr:168,85,247"><span>⭐</span>Wishlist</button>
+    </div>
+
+    <div class="dur" id="dur">
+      <label class="fl">Duration lived</label>
+      <div class="drow">
+        <input type="number" id="dyears" placeholder="0" min="0" max="100" inputmode="numeric">
+        <span class="unit">yrs</span>
+        <input type="number" id="dmonths" placeholder="0" min="0" max="11" inputmode="numeric">
+        <span class="unit">mo</span>
+      </div>
+    </div>
+
+    <label class="fl">Notes <span style="opacity:.3">(optional)</span></label>
+    <input type="text" id="mnotes" placeholder="e.g. Studied abroad, 2018…" autocomplete="off">
+
+    <div class="mact">
+      <button class="bsec" id="btn-mcancel">Cancel</button>
+      <button class="bpri" id="btn-msave">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- SEARCH -->
+<div id="sover">
+  <div class="glass" id="sbox">
+    <div class="sinp">
+      <span class="sico">⌕</span>
+      <input type="text" id="sinput" placeholder="Search countries…" autocomplete="off" autocorrect="off" spellcheck="false">
+      <button class="s-close" id="btn-sclose">✕</button>
+    </div>
+    <div id="sres"></div>
+  </div>
+</div>
+
+<!-- SETTINGS -->
+<div class="glass" id="cfg">
+  <div class="cfg-t">Settings <button class="ib ib-sm" id="btn-cfgx">✕</button></div>
+  <div class="cfg-sec">Category Colours</div>
+  <div class="cr"><div class="cl"><div class="cprev" id="pv-bp"></div>🏠 Birthplace</div><input type="color" id="col-bp"></div>
+  <div class="cr"><div class="cl"><div class="cprev" id="pv-li"></div>🏡 Lived In</div><input type="color" id="col-li"></div>
+  <div class="cr"><div class="cl"><div class="cprev" id="pv-vi"></div>✈️ Visited</div><input type="color" id="col-vi"></div>
+  <div class="cr" style="border-bottom:none"><div class="cl"><div class="cprev" id="pv-wi"></div>⭐ Wishlist</div><input type="color" id="col-wi"></div>
+  <div class="cfg-sec">Globe Colours</div>
+  <div class="cr"><div class="cl"><div class="cprev" id="pv-oc"></div>Ocean</div><input type="color" id="col-oc"></div>
+  <div class="cr" style="border-bottom:none"><div class="cl"><div class="cprev" id="pv-la"></div>Land (default)</div><input type="color" id="col-la"></div>
+  <div class="cfg-sec">Options</div>
+  <label class="tog"><input type="checkbox" id="chk-ar" checked><span>Auto-rotate when idle</span></label>
+  <button class="bdanger" id="btn-clear">Clear All Data</button>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── COUNTRY DATA ──────────────────────────────────────────────
+const CL=[
+  ["Afghanistan",4],["Albania",8],["Algeria",12],["Andorra",20],["Angola",24],
+  ["Antigua and Barbuda",28],["Argentina",32],["Armenia",51],["Australia",36],
+  ["Austria",40],["Azerbaijan",31],["Bahamas",44],["Bahrain",48],["Bangladesh",50],
+  ["Barbados",52],["Belarus",112],["Belgium",56],["Belize",84],["Benin",204],
+  ["Bhutan",64],["Bolivia",68],["Bosnia and Herzegovina",70],["Botswana",72],
+  ["Brazil",76],["Brunei",96],["Bulgaria",100],["Burkina Faso",854],["Burundi",108],
+  ["Cambodia",116],["Cameroon",120],["Canada",124],["Cape Verde",132],
+  ["Central African Republic",140],["Chad",148],["Chile",152],["China",156],
+  ["Colombia",170],["Comoros",174],["Congo",178],["Costa Rica",188],
+  ["Croatia",191],["Cuba",192],["Cyprus",196],["Czech Republic",203],
+  ["DR Congo",180],["Denmark",208],["Djibouti",262],["Dominican Republic",214],
+  ["East Timor",626],["Ecuador",218],["Egypt",818],["El Salvador",222],
+  ["Equatorial Guinea",226],["Eritrea",232],["Estonia",233],["Eswatini",748],
+  ["Ethiopia",231],["Fiji",242],["Finland",246],["France",250],["Gabon",266],
+  ["Gambia",270],["Georgia",268],["Germany",276],["Ghana",288],["Greece",300],
+  ["Guatemala",320],["Guinea",324],["Guinea-Bissau",624],["Guyana",328],
+  ["Haiti",332],["Honduras",340],["Hungary",348],["Iceland",352],["India",356],
+  ["Indonesia",360],["Iran",364],["Iraq",368],["Ireland",372],["Israel",376],
+  ["Italy",380],["Ivory Coast",384],["Jamaica",388],["Japan",392],["Jordan",400],
+  ["Kazakhstan",398],["Kenya",404],["Kuwait",414],["Kyrgyzstan",417],["Laos",418],
+  ["Latvia",428],["Lebanon",422],["Lesotho",426],["Liberia",430],["Libya",434],
+  ["Lithuania",440],["Luxembourg",442],["Madagascar",450],["Malawi",454],
+  ["Malaysia",458],["Mali",466],["Malta",470],["Mauritania",478],["Mexico",484],
+  ["Moldova",498],["Mongolia",496],["Montenegro",499],["Morocco",504],
+  ["Mozambique",508],["Myanmar",104],["Namibia",516],["Nepal",524],
+  ["Netherlands",528],["New Zealand",554],["Nicaragua",558],["Niger",562],
+  ["Nigeria",566],["North Korea",408],["North Macedonia",807],["Norway",578],
+  ["Oman",512],["Pakistan",586],["Palestine",275],["Panama",591],
+  ["Papua New Guinea",598],["Paraguay",600],["Peru",604],["Philippines",608],
+  ["Poland",616],["Portugal",620],["Qatar",634],["Romania",642],["Russia",643],
+  ["Rwanda",646],["Saudi Arabia",682],["Senegal",686],["Serbia",688],
+  ["Sierra Leone",694],["Singapore",702],["Slovakia",703],["Slovenia",705],
+  ["Somalia",706],["South Africa",710],["South Korea",410],["South Sudan",728],
+  ["Spain",724],["Sri Lanka",144],["Sudan",729],["Suriname",740],["Sweden",752],
+  ["Switzerland",756],["Syria",760],["Taiwan",158],["Tajikistan",762],
+  ["Tanzania",834],["Thailand",764],["Togo",768],["Trinidad and Tobago",780],
+  ["Tunisia",788],["Turkey",792],["Turkmenistan",795],["Uganda",800],
+  ["Ukraine",804],["United Arab Emirates",784],["United Kingdom",826],
+  ["United States",840],["Uruguay",858],["Uzbekistan",860],["Venezuela",862],
+  ["Vietnam",704],["Yemen",887],["Zambia",894],["Zimbabwe",716]
+];
+const DN=Object.fromEntries(CL.map(([n,id])=>[String(id),n]));
+const defaultName=id=>DN[String(id)]||`Territory ${id}`;
+
+// ── STATE ──────────────────────────────────────────────────────
+let ud={},cnames={};
+let cfg={
+  colors:{birthplace:'#ef4444',lived:'#f59e0b',visited:'#22c55e',wishlist:'#a855f7',
+          ocean:'#0a0d12',land:'#1c1c1c',border:'rgba(255,255,255,0.09)',grat:'rgba(255,255,255,0.03)'},
+  autoRotate:true
+};
+const nameOf=id=>cnames[String(id)]||defaultName(id);
+
+function loadState(){
+  try{const s=localStorage.getItem('wa3');if(s)ud=JSON.parse(s);}catch(e){}
+  try{const s=localStorage.getItem('wa3n');if(s)cnames=JSON.parse(s);}catch(e){}
+  try{const s=localStorage.getItem('wa3c');if(s){const c=JSON.parse(s);cfg={...cfg,...c,colors:{...cfg.colors,...c.colors}};}}catch(e){}
+}
+function saveState(){
+  localStorage.setItem('wa3',JSON.stringify(ud));
+  localStorage.setItem('wa3n',JSON.stringify(cnames));
+  localStorage.setItem('wa3c',JSON.stringify(cfg));
+}
+
+const isMobile=()=>window.innerWidth<=640;
+
+// ── THREE.JS ──────────────────────────────────────────────────
+const canvas=document.getElementById('gc');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(45,innerWidth/innerHeight,.1,100);
+camera.position.z=2.8;
+
+// Stars
+const sg=new THREE.BufferGeometry(),sv=new Float32Array(3500*3);
+for(let i=0;i<3500;i++){
+  const t=Math.random()*Math.PI*2,p=Math.acos(2*Math.random()-1),r=30+Math.random()*20;
+  sv[i*3]=r*Math.sin(p)*Math.cos(t);sv[i*3+1]=r*Math.sin(p)*Math.sin(t);sv[i*3+2]=r*Math.cos(p);
+}
+sg.setAttribute('position',new THREE.BufferAttribute(sv,3));
+scene.add(new THREE.Points(sg,new THREE.PointsMaterial({color:0xffffff,size:.035,sizeAttenuation:true,transparent:true,opacity:.55})));
+
+const gg=new THREE.Group();scene.add(gg);gg.rotation.y=.15;
+
+const tc=document.createElement('canvas');tc.width=2048;tc.height=1024;
+const tx=tc.getContext('2d');
+const tex=new THREE.CanvasTexture(tc);
+const gmesh=new THREE.Mesh(
+  new THREE.SphereGeometry(1,72,72),
+  new THREE.MeshPhongMaterial({map:tex,specular:new THREE.Color(0x0e0e0e),shininess:5})
+);
+gg.add(gmesh);
+
+const atm=new THREE.Mesh(new THREE.SphereGeometry(1.1,64,64),new THREE.ShaderMaterial({
+  vertexShader:`varying vec3 vn;void main(){vn=normalize(normalMatrix*normal);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+  fragmentShader:`varying vec3 vn;void main(){float i=pow(max(0.,dot(vn,vec3(0,0,1))-.06),3.0)*.5;gl_FragColor=vec4(.5,.35,.15,i);}`,
+  side:THREE.BackSide,blending:THREE.AdditiveBlending,transparent:true,depthWrite:false
+}));
+scene.add(atm);
+
+scene.add(new THREE.AmbientLight(0x181410,2.8));
+const dl=new THREE.DirectionalLight(0xfff4e8,.75);dl.position.set(4,3,5);scene.add(dl);
+const rc=new THREE.Raycaster(),mv=new THREE.Vector2();
+
+// ── GEO ───────────────────────────────────────────────────────
+let features=[];
+const proj=d3.geoEquirectangular().scale(tc.width/(2*Math.PI)).translate([tc.width/2,tc.height/2]);
+const gpath=d3.geoPath().projection(proj).context(tx);
+const grat=d3.geoGraticule()();
+
+function draw(hovId=null){
+  tx.fillStyle=cfg.colors.ocean;tx.fillRect(0,0,tc.width,tc.height);
+  tx.beginPath();gpath(grat);tx.strokeStyle=cfg.colors.grat;tx.lineWidth=.7;tx.stroke();
+  features.forEach(f=>{
+    const id=String(f.id),d=ud[id];
+    tx.beginPath();gpath(f);tx.fillStyle=d?cfg.colors[d.category]:cfg.colors.land;tx.fill();
+    tx.strokeStyle=cfg.colors.border;tx.lineWidth=.5;tx.stroke();
+  });
+  if(hovId){
+    const hf=features.find(f=>String(f.id)===hovId);
+    if(hf){
+      const d=ud[hovId],base=d?cfg.colors[d.category]:cfg.colors.land;
+      tx.beginPath();gpath(hf);tx.fillStyle=lighten(base,.38);tx.fill();
+      tx.strokeStyle='rgba(255,255,255,.4)';tx.lineWidth=1.5;tx.stroke();
+    }
+  }
+  tex.needsUpdate=true;
+}
+
+function lighten(h,a){
+  try{const r=parseInt(h.slice(1,3),16),g=parseInt(h.slice(3,5),16),b=parseInt(h.slice(5,7),16);
+    return `rgb(${Math.round(r+(255-r)*a)},${Math.round(g+(255-g)*a)},${Math.round(b+(255-b)*a)})`;}
+  catch(e){return h;}
+}
+
+async function loadWorld(){
+  const t=await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json').then(r=>r.json());
+  features=topojson.feature(t,t.objects.countries).features;
+  draw();
+  document.getElementById('load').classList.add('fade');
+  setTimeout(()=>document.getElementById('load').style.display='none',600);
+}
+
+// ── TOUCH / MOUSE INTERACTION ─────────────────────────────────
+let dragging=false,pinching=false;
+let mdp={x:0,y:0},mlp={x:0,y:0},vel={x:0,y:0};
+let initPinchDist=0,initCamZ=0;
+let hovered=null,autoOn=true,idleT=null,modalOpen=false;
+
+// Single touch / mouse drag
+function onDown(cx,cy){
+  dragging=true;mdp={x:cx,y:cy};mlp={x:cx,y:cy};
+  vel={x:0,y:0};clearTimeout(idleT);autoOn=false;
+}
+function onMove(cx,cy){
+  if(!dragging||pinching)return;
+  const dx=cx-mlp.x,dy=cy-mlp.y;
+  gg.rotation.y+=dx*.005;
+  gg.rotation.x=Math.max(-Math.PI/2,Math.min(Math.PI/2,gg.rotation.x+dy*.005));
+  vel={x:dy*.003,y:dx*.005};mlp={x:cx,y:cy};
+}
+function onUp(cx,cy){
+  if(!dragging)return;
+  dragging=false;
+  if(Math.hypot(cx-mdp.x,cy-mdp.y)<8&&!modalOpen)doClick(cx,cy);
+  resumeAR();
+}
+
+// Mouse
+canvas.addEventListener('mousedown',e=>onDown(e.clientX,e.clientY));
+window.addEventListener('mousemove',e=>{if(dragging)onMove(e.clientX,e.clientY);else doHov(e.clientX,e.clientY,e);});
+window.addEventListener('mouseup',e=>onUp(e.clientX,e.clientY));
+canvas.addEventListener('wheel',e=>{camera.position.z=Math.max(1.4,Math.min(5.5,camera.position.z+e.deltaY*.002));resumeAR();},{passive:true});
+
+// Touch — single finger or pinch
+canvas.addEventListener('touchstart',e=>{
+  e.preventDefault();
+  if(e.touches.length===1){
+    const t=e.touches[0];onDown(t.clientX,t.clientY);pinching=false;
+  } else if(e.touches.length===2){
+    pinching=true;dragging=false;
+    initPinchDist=pinchDist(e.touches);initCamZ=camera.position.z;
+  }
+},{passive:false});
+
+canvas.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  if(e.touches.length===1&&!pinching){
+    const t=e.touches[0];onMove(t.clientX,t.clientY);
+  } else if(e.touches.length===2){
+    pinching=true;
+    const d=pinchDist(e.touches);
+    camera.position.z=Math.max(1.4,Math.min(5.5,initCamZ*(initPinchDist/d)));
+  }
+},{passive:false});
+
+canvas.addEventListener('touchend',e=>{
+  e.preventDefault();
+  if(e.touches.length===0){
+    if(pinching){pinching=false;resumeAR();}
+    else{const t=e.changedTouches[0];onUp(t.clientX,t.clientY);}
+  } else if(e.touches.length===1){
+    pinching=false;
+    const t=e.touches[0];mlp={x:t.clientX,y:t.clientY};
+  }
+},{passive:false});
+
+function pinchDist(touches){
+  const dx=touches[0].clientX-touches[1].clientX,dy=touches[0].clientY-touches[1].clientY;
+  return Math.sqrt(dx*dx+dy*dy);
+}
+
+function resumeAR(){if(cfg.autoRotate){clearTimeout(idleT);idleT=setTimeout(()=>autoOn=true,3500);}}
+
+function setMV(cx,cy){mv.set((cx/innerWidth)*2-1,-((cy/innerHeight)*2-1));}
+function featAt(uv){
+  const lon=uv.x*360-180,lat=uv.y*180-90;
+  return features.find(f=>{try{return d3.geoContains(f,[lon,lat]);}catch(e){return false;}});
+}
+
+function doClick(cx,cy){
+  setMV(cx,cy);rc.setFromCamera(mv,camera);
+  const hits=rc.intersectObject(gmesh);
+  if(hits.length&&hits[0].uv){
+    const f=featAt(hits[0].uv);
+    if(f){
+      const id=String(f.id);
+      if(isMobile()) showTapBanner(id,cx,cy);
+      else openModal(id);
+    }
+  }
+}
+
+// Mobile: first tap shows banner, second tap (or banner tap) opens modal
+let lastTapId=null,bannerT=null;
+function showTapBanner(id){
+  const d=ud[id];
+  const cat=d?{birthplace:'🏠',lived:'🏡',visited:'✈️',wishlist:'⭐'}[d.category]+' ':'';
+  const el=document.getElementById('tapbanner');
+  el.textContent=(cat||'📍 ')+nameOf(id)+(d?'':' — tap again to add');
+  el.style.borderColor=d?cfg.colors[d.category]:'rgba(200,169,110,.4)';
+  el.classList.add('show');
+  draw(id);hovered=id;
+  if(lastTapId===id){
+    // second tap — open modal
+    clearTimeout(bannerT);hidTapBanner();openModal(id);lastTapId=null;
+  } else {
+    lastTapId=id;
+    clearTimeout(bannerT);bannerT=setTimeout(()=>{hidTapBanner();lastTapId=null;draw();hovered=null;},2800);
+  }
+}
+function hidTapBanner(){document.getElementById('tapbanner').classList.remove('show');}
+
+// Desktop hover
+let hvT=0;
+function doHov(cx,cy,e){
+  const now=performance.now();if(now-hvT<55)return;hvT=now;
+  setMV(cx,cy);rc.setFromCamera(mv,camera);
+  const hits=rc.intersectObject(gmesh);
+  if(hits.length&&hits[0].uv){
+    const f=featAt(hits[0].uv),nid=f?String(f.id):null;
+    if(nid!==hovered){hovered=nid;draw(hovered);showTip(nid,e);}
+    else if(nid)movTip(e);
+  } else if(hovered){hovered=null;draw();hidTip();}
+}
+
+// ── TOOLTIP (desktop) ─────────────────────────────────────────
+function showTip(id,e){
+  if(!id){hidTip();return;}
+  const d=ud[id];
+  document.getElementById('tip-name').textContent=nameOf(id);
+  let sub='';
+  if(d){
+    const l={birthplace:'🏠 Birthplace',lived:'🏡 Lived In',visited:'✈️ Visited',wishlist:'⭐ Wishlist'};
+    sub=l[d.category]||d.category;
+    if(d.category==='lived'&&(d.years||d.months)){const p=[];if(d.years>0)p.push(d.years+'y');if(d.months>0)p.push(d.months+'mo');sub+=' · '+p.join(' ');}
+  } else sub='Click to add';
+  document.getElementById('tip-sub').textContent=sub;
+  movTip(e);document.getElementById('tip').classList.add('show');
+}
+function movTip(e){if(!e)return;const t=document.getElementById('tip');t.style.left=(e.clientX+14)+'px';t.style.top=(e.clientY-14)+'px';}
+function hidTip(){document.getElementById('tip').classList.remove('show');}
+
+// ── MODAL ─────────────────────────────────────────────────────
+let curId=null,selCat=null;
+
+function openModal(id){
+  curId=id;selCat=null;modalOpen=true;
+  hidTapBanner();draw(id);hovered=id;
+  document.getElementById('m-name').textContent=nameOf(id);
+  document.getElementById('m-sub').textContent=ud[id]?'Edit entry':'Mark how you know this place';
+  document.getElementById('m-dispname').value=cnames[id]||'';
+  document.getElementById('m-dispname').placeholder=defaultName(id);
+  document.querySelectorAll('.cb').forEach(b=>b.classList.remove('on'));
+  document.getElementById('dur').classList.remove('on');
+  document.getElementById('dyears').value='';document.getElementById('dmonths').value='';
+  document.getElementById('mnotes').value='';
+  const d=ud[id];
+  if(d){
+    selCat=d.category;
+    document.querySelector(`.cb[data-cat="${d.category}"]`)?.classList.add('on');
+    if(d.category==='lived'){document.getElementById('dur').classList.add('on');document.getElementById('dyears').value=d.years||'';document.getElementById('dmonths').value=d.months||'';}
+    document.getElementById('mnotes').value=d.notes||'';
+  }
+  document.getElementById('mover').classList.add('on');
+  // Close bottom sheet if open on mobile
+  if(isMobile())setSheet('peek');
+}
+
+function closeModal(){
+  document.getElementById('mover').classList.remove('on');
+  curId=null;selCat=null;modalOpen=false;
+  draw(hovered);
+}
+
+document.querySelectorAll('.cb').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.cb').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');selCat=b.dataset.cat;
+  document.getElementById('dur').classList.toggle('on',selCat==='lived');
+}));
+
+document.getElementById('btn-nrst').addEventListener('click',()=>{
+  document.getElementById('m-dispname').value='';
+  document.getElementById('m-dispname').placeholder=curId?defaultName(curId):'';
+});
+document.getElementById('btn-mcancel').addEventListener('click',closeModal);
+document.getElementById('mover').addEventListener('click',e=>{if(e.target===document.getElementById('mover'))closeModal();});
+
+document.getElementById('btn-msave').addEventListener('click',()=>{
+  if(!selCat){toast('Please select a category');return;}
+  const dn=document.getElementById('m-dispname').value.trim();
+  if(dn&&dn!==defaultName(curId))cnames[curId]=dn;else delete cnames[curId];
+  const d={category:selCat};
+  if(selCat==='lived'){d.years=parseInt(document.getElementById('dyears').value)||0;d.months=parseInt(document.getElementById('dmonths').value)||0;}
+  d.notes=document.getElementById('mnotes').value.trim();
+  ud[curId]=d;saveState();closeModal();draw(hovered);updateUI();
+  toast(nameOf(curId)+' saved!');
+});
+
+// ── BOTTOM SHEET (mobile) ─────────────────────────────────────
+let sheetState='closed'; // 'closed'|'peek'|'open'
+let activeTab='legend';
+
+function setSheet(state){
+  sheetState=state;
+  const s=document.getElementById('sheet');
+  s.className='glass';
+  if(state==='peek')s.classList.add('peek');
+  else if(state==='open')s.classList.add('open');
+  // else closed — no extra class
+}
+
+// Sheet drag
+let shDragY=0,shDragStart=0,shDragState='';
+const shHandle=document.getElementById('sh-handle');
+const shBody=document.getElementById('sh-body');
+
+function initSheetDrag(startY){shDragStart=startY;shDragState=sheetState;}
+function moveSheetDrag(curY){
+  const dy=curY-shDragStart;
+  const sheet=document.getElementById('sheet');
+  // Visual drag feedback
+  if(dy>0) sheet.style.transform=`translateY(${dy}px)`;
+  else if(shDragState!=='open') sheet.style.transform='';
+}
+function endSheetDrag(curY){
+  const sheet=document.getElementById('sheet');
+  sheet.style.transform='';
+  const dy=curY-shDragStart;
+  if(dy<-40) setSheet(shDragState==='peek'?'open':'open');
+  else if(dy>40) setSheet(shDragState==='open'?'peek':'closed');
+  else setSheet(shDragState);
+}
+
+shHandle.addEventListener('touchstart',e=>{initSheetDrag(e.touches[0].clientY);},{passive:true});
+shHandle.addEventListener('touchmove',e=>{moveSheetDrag(e.touches[0].clientY);},{passive:true});
+shHandle.addEventListener('touchend',e=>{endSheetDrag(e.changedTouches[0].clientY);},{passive:true});
+shHandle.addEventListener('mousedown',e=>{
+  initSheetDrag(e.clientY);
+  const mm=ev=>{moveSheetDrag(ev.clientY);};
+  const mu=ev=>{endSheetDrag(ev.clientY);window.removeEventListener('mousemove',mm);window.removeEventListener('mouseup',mu);};
+  window.addEventListener('mousemove',mm);window.addEventListener('mouseup',mu);
+});
+
+// Sheet tabs
+document.querySelectorAll('.sh-tab').forEach(tab=>{
+  tab.addEventListener('click',()=>{
+    document.querySelectorAll('.sh-tab').forEach(t=>t.classList.remove('on'));
+    tab.classList.add('on');activeTab=tab.dataset.tab;
+    document.getElementById('sh-legend').style.display=activeTab==='legend'?'block':'none';
+    document.getElementById('sh-list').style.display=activeTab==='list'?'block':'none';
+    if(sheetState!=='open')setSheet('open');
+  });
+});
+
+// ── DESKTOP SIDEBAR TOGGLE ────────────────────────────────────
+let sOpen=true;
+function toggleSide(){
+  sOpen=!sOpen;
+  const s=document.getElementById('side'),tab=document.getElementById('stab');
+  s.className=sOpen?'open':'shut';
+  tab.className=sOpen?'open':'shut';
+  tab.textContent=sOpen?'‹':'›';
+}
+document.getElementById('stab').addEventListener('click',toggleSide);
+
+// ── FABs (mobile) ────────────────────────────────────────────
+document.getElementById('fab-add').addEventListener('click',openSearch);
+document.getElementById('fab-cfg').addEventListener('click',()=>document.getElementById('cfg').classList.toggle('on'));
+document.getElementById('fab-panel').addEventListener('click',()=>{
+  if(sheetState==='open'){setSheet('peek');}
+  else{activeTab='list';document.querySelectorAll('.sh-tab').forEach(t=>t.classList.toggle('on',t.dataset.tab==='list'));
+    document.getElementById('sh-legend').style.display='none';document.getElementById('sh-list').style.display='block';
+    setSheet('open');}
+});
+
+// Desktop settings button
+document.getElementById('btn-cfg').addEventListener('click',()=>document.getElementById('cfg').classList.toggle('on'));
+document.getElementById('btn-cfgx').addEventListener('click',()=>document.getElementById('cfg').classList.remove('on'));
+
+// ── SEARCH ────────────────────────────────────────────────────
+function openSearch(){
+  document.getElementById('sover').classList.add('on');
+  setTimeout(()=>document.getElementById('sinput').focus(),50);
+  renderSearch('');
+  if(isMobile())setSheet('closed');
+}
+function closeSearch(){document.getElementById('sover').classList.remove('on');document.getElementById('sinput').value='';}
+document.getElementById('btn-add').addEventListener('click',openSearch);
+document.getElementById('btn-sclose').addEventListener('click',closeSearch);
+document.getElementById('sover').addEventListener('click',e=>{if(e.target===document.getElementById('sover'))closeSearch();});
+document.getElementById('sinput').addEventListener('input',e=>renderSearch(e.target.value));
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){closeModal();closeSearch();document.getElementById('cfg').classList.remove('on');}
+  if((e.key==='/'||e.key==='k'&&(e.ctrlKey||e.metaKey))&&!modalOpen){e.preventDefault();openSearch();}
+});
+
+function renderSearch(q){
+  const ql=q.toLowerCase().trim();
+  const filt=ql?CL.filter(([n,id])=>n.toLowerCase().includes(ql)||(cnames[String(id)]||'').toLowerCase().includes(ql)):CL;
+  document.getElementById('sres').innerHTML=filt.slice(0,30).map(([n,id])=>{
+    const sid=String(id),d=ud[sid],custom=cnames[sid];
+    const dot=d?`background:${cfg.colors[d.category]}`:'';
+    const cat=d?{birthplace:'🏠',lived:'🏡',visited:'✈️',wishlist:'⭐'}[d.category]:'';
+    const disp=custom||n;
+    const sub=custom?`<span class="sr-sub">${n}</span>`:'';
+    return `<div class="sr" data-id="${id}"><div class="sr-dot" style="${dot}"></div><span style="flex:1">${disp}</span>${sub}${cat?`<span class="sr-cat">${cat}</span>`:''}</div>`;
+  }).join('');
+  document.querySelectorAll('.sr').forEach(el=>el.addEventListener('click',()=>{
+    curId=String(el.dataset.id);closeSearch();spinTo(curId);
+    setTimeout(()=>openModal(curId),600);
+  }));
+}
+
+function spinTo(id){
+  const f=features.find(f=>String(f.id)===id);if(!f)return;
+  const c=d3.geoCentroid(f);
+  const ty=-c[0]*(Math.PI/180),tx2=Math.max(-Math.PI/2,Math.min(Math.PI/2,-c[1]*(Math.PI/180)*.4));
+  const sy=gg.rotation.y,sx=gg.rotation.x,t0=performance.now();
+  let dY=ty-sy;while(dY>Math.PI)dY-=Math.PI*2;while(dY<-Math.PI)dY+=Math.PI*2;
+  function a(now){const t=Math.min((now-t0)/800,1),ez=t<.5?2*t*t:-1+(4-2*t)*t;
+    gg.rotation.y=sy+dY*ez;gg.rotation.x=sx+(tx2-sx)*ez;if(t<1)requestAnimationFrame(a);}
+  requestAnimationFrame(a);
+}
+
+// ── SETTINGS ─────────────────────────────────────────────────
+const CF=[['col-bp','pv-bp','birthplace'],['col-li','pv-li','lived'],
+  ['col-vi','pv-vi','visited'],['col-wi','pv-wi','wishlist'],
+  ['col-oc','pv-oc','ocean'],['col-la','pv-la','land']];
+CF.forEach(([iId,pId,key])=>{
+  const inp=document.getElementById(iId),pv=document.getElementById(pId);
+  inp.value=cfg.colors[key];pv.style.background=cfg.colors[key];
+  inp.addEventListener('input',()=>{cfg.colors[key]=inp.value;pv.style.background=inp.value;updateCSSVars();draw(hovered);updateUI();saveState();});
+});
+document.getElementById('chk-ar').addEventListener('change',e=>{cfg.autoRotate=e.target.checked;autoOn=e.target.checked;saveState();});
+document.getElementById('btn-clear').addEventListener('click',()=>{
+  if(confirm('Clear all data? This cannot be undone.')){ud={};cnames={};saveState();draw();updateUI();toast('All data cleared');}
+});
+
+// ── UI UPDATE ─────────────────────────────────────────────────
+function updateCSSVars(){
+  const r=document.documentElement.style;
+  r.setProperty('--c-bp',cfg.colors.birthplace);r.setProperty('--c-li',cfg.colors.lived);
+  r.setProperty('--c-vi',cfg.colors.visited);r.setProperty('--c-wi',cfg.colors.wishlist);
+}
+
+function makeCi(id,d){
+  const el=document.createElement('div');el.className='ci';el.dataset.id=id;
+  const lbl={birthplace:'🏠',lived:'🏡',visited:'✈️',wishlist:'⭐'};
+  let meta=lbl[d.category]||'';
+  if(d.category==='lived'&&(d.years||d.months)){const p=[];if(d.years>0)p.push(d.years+'y');if(d.months>0)p.push(d.months+'mo');meta+=' '+p.join(' ');}
+  el.innerHTML=`<div class="cdot" style="background:${cfg.colors[d.category]}"></div><div class="cn">${nameOf(id)}</div><div class="cm">${meta}</div><button class="cdel" data-id="${id}" aria-label="Remove">×</button>`;
+  el.addEventListener('click',e=>{if(e.target.classList.contains('cdel'))return;curId=id;spinTo(id);setTimeout(()=>openModal(id),isMobile()?0:0);});
+  el.querySelector('.cdel').addEventListener('click',e=>{e.stopPropagation();const n=nameOf(id);delete ud[id];saveState();draw(hovered);updateUI();toast(n+' removed');});
+  return el;
+}
+
+function updateUI(){
+  const ct={birthplace:0,lived:0,visited:0,wishlist:0};
+  Object.values(ud).forEach(d=>{if(d.category in ct)ct[d.category]++;});
+  const total=Object.keys(ud).length,vi=ct.visited+ct.lived+ct.birthplace;
+  document.getElementById('s-vi').textContent=vi;
+  document.getElementById('s-li').textContent=ct.lived;
+  document.getElementById('s-to').textContent=total;
+  document.getElementById('s-pc').textContent=Math.round(total/195*100)+'%';
+
+  const cats=['birthplace','lived','visited','wishlist'];
+  const keys=['bp','li','vi','wi'];
+  keys.forEach((k,i)=>{
+    const col=cfg.colors[cats[i]],cnt=ct[cats[i]];
+    // Desktop
+    const dd=document.getElementById(`d-${k}`),dc=document.getElementById(`c-${k}`);
+    if(dd){dd.style.background=col;dc.textContent=cnt;}
+    // Mobile sheet
+    const md=document.getElementById(`m-d-${k}`),mc=document.getElementById(`m-c-${k}`);
+    if(md){md.style.background=col;mc.textContent=cnt;}
+  });
+
+  // Desktop country list
+  const scroll=document.getElementById('cscroll'),emp=document.getElementById('cempty');
+  if(scroll){
+    scroll.querySelectorAll('.ci').forEach(e=>e.remove());
+    emp.style.display=total?'none':'block';
+    const ord=['birthplace','lived','visited','wishlist'];
+    const entries=Object.entries(ud).sort((a,b)=>ord.indexOf(a[1].category)-ord.indexOf(b[1].category));
+    entries.forEach(([id,d])=>scroll.appendChild(makeCi(id,d)));
+  }
+
+  // Mobile sheet list
+  const mlist=document.getElementById('sh-list'),memp=document.getElementById('m-cempty');
+  if(mlist){
+    mlist.querySelectorAll('.ci').forEach(e=>e.remove());
+    if(memp)memp.style.display=total?'none':'block';
+    const ord=['birthplace','lived','visited','wishlist'];
+    const entries=Object.entries(ud).sort((a,b)=>ord.indexOf(a[1].category)-ord.indexOf(b[1].category));
+    entries.forEach(([id,d])=>mlist.appendChild(makeCi(id,d)));
+  }
+
+  updateCSSVars();
+}
+
+// ── TOAST ─────────────────────────────────────────────────────
+let toastT=null;
+function toast(msg){
+  const t=document.getElementById('toast');t.textContent=msg;t.classList.add('on');
+  clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('on'),2600);
+}
+
+// ── ANIMATION ─────────────────────────────────────────────────
+function animate(){
+  requestAnimationFrame(animate);
+  if(!dragging&&!pinching){
+    gg.rotation.y+=vel.y;gg.rotation.x+=vel.x;
+    gg.rotation.x=Math.max(-Math.PI/2,Math.min(Math.PI/2,gg.rotation.x));
+    vel.x*=.92;vel.y*=.92;
+    if(autoOn&&cfg.autoRotate)gg.rotation.y+=.0005;
+  }
+  renderer.render(scene,camera);
+}
+
+window.addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);
+});
+
+// ── INIT ──────────────────────────────────────────────────────
+loadState();
+document.getElementById('chk-ar').checked=cfg.autoRotate;
+autoOn=cfg.autoRotate;
+CF.forEach(([iId,pId,key])=>{document.getElementById(iId).value=cfg.colors[key];document.getElementById(pId).style.background=cfg.colors[key];});
+// Initial sheet state on mobile
+if(isMobile())setSheet('peek');
+updateCSSVars();draw();updateUI();animate();loadWorld();
+</script>
+</body>
+</html>
